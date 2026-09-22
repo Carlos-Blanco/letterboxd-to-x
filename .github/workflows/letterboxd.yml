@@ -1,0 +1,41 @@
+name: Letterboxd to X
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: letterboxd-to-x
+  cancel-in-progress: false
+
+jobs:
+  post-new-ratings:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Publish new ratings
+        run: node src/index.js
+        env:
+          LETTERBOXD_RSS_URL: https://letterboxd.com/charlie_white/rss/
+          X_USER_ACCESS_TOKEN: ${{ secrets.X_USER_ACCESS_TOKEN }}
+
+      - name: Save processed feed position
+        run: |
+          if ! git diff --quiet -- last-posted.json; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add last-posted.json
+            git commit -m "Update last processed Letterboxd entry"
+            git push
+          fi
