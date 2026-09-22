@@ -2,6 +2,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 
 const FEED_URL = process.env.LETTERBOXD_RSS_URL ?? 'https://letterboxd.com/charlie_white/rss/';
+const LETTERBOXD_PROFILE_URL = process.env.LETTERBOXD_PROFILE_URL ?? 'https://letterboxd.com/charlie_white/';
 const STATE_FILE = new URL('../last-posted.json', import.meta.url);
 
 function decode(value = '') {
@@ -91,7 +92,7 @@ async function uploadImage(url, token) {
 
 async function publish(entry, token) {
   const mediaId = entry.image ? await uploadImage(entry.image, token) : undefined;
-  const text = `🍿 Acabo de ver '${entry.title}'${entry.year ? ` (${entry.year})` : ''}${entry.rating ? `\n${entry.rating}` : ''}`;
+  const text = `🍿 Acabo de ver '${entry.title}'${entry.year ? ` (${entry.year})` : ''}${entry.rating ? `\n${entry.rating}` : ''}\n\n${LETTERBOXD_PROFILE_URL}`;
   const body = { text, ...(mediaId ? { media: { media_ids: [mediaId] } } : {}) };
   const endpoint = 'https://api.x.com/2/tweets';
   const response = await fetch(endpoint, {
