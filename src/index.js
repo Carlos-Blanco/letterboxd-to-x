@@ -139,11 +139,28 @@ async function uploadImage(url, token) {
   form.append('media_category', 'tweet_image');
   const endpoint = 'https://api.x.com/2/media/upload';
   const upload = await fetch(endpoint, { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: form });
-  if (!upload.ok) throw new Error(`X rechazó la portada (${upload.status}): ${await upload.text()}`);
+  if (!upload.ok) {
+    const detail = await upload.text();
+    if (upload.status === 401 || upload.status === 403) {
+      throw new Error(`X rechazó la subida de medios (${upload.status}). El token de usuario se validó previamente; revisa que la autorización OAuth incluya media.write y que la app tenga acceso a la subida de medios. Respuesta: ${detail}`);
+    }
+    throw new Error(`X rechazó la portada (${upload.status}): ${detail}`);
+  }
   const result = await upload.json();
   const id = result.data?.id ?? result.data?.media_id;
   if (!id) throw new Error(`X no devolvió el identificador de la portada: ${JSON.stringify(result)}`);
   return id;
+}
+
+async function validateXUserToken(token) {
+  const response = await fetch('https://api.x.com/2/users/me', {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!response.ok) {
+    throw new Error(`X no acepta el token de usuario (${response.status}): ${await response.text()}. Renueva el token OAuth 2.0 y comprueba users.read.`);
+  }
+  const { data } = await response.json();
+  console.log(`Token de X validado para @${data.username}.`);
 }
 
 async function publish(entry, token) {
@@ -182,6 +199,7 @@ if (!state.lastPostedId) {
   const pending = lastIndex === -1 ? [entries[0]] : entries.slice(0, lastIndex).reverse();
   if (pending.length) {
     const token = await accessToken();
+    await validateXUserToken(token);
     for (const entry of pending) {
       await publish(entry, token);
       await writeFile(STATE_FILE, `${JSON.stringify({ lastPostedId: entry.id }, null, 2)}\n`);
