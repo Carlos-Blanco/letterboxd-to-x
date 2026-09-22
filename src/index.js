@@ -1,5 +1,5 @@
 import { readFile, writeFile } from 'node:fs/promises';
-import { execFileSync } from 'node:child_process';
+import { createHmac, randomBytes } from 'node:crypto';
 
 const FEED_URL = process.env.LETTERBOXD_RSS_URL ?? 'https://letterboxd.com/charlie_white/rss/';
 const LETTERBOXD_PROFILE_URL = process.env.LETTERBOXD_PROFILE_URL ?? 'https://letterboxd.com/charlie_white/';
@@ -54,39 +54,36 @@ function parseFeed(xml) {
   }).filter((entry) => entry.id && entry.title);
 }
 
-async function accessToken() {
-  const refreshToken = process.env.X_REFRESH_TOKEN;
-  if (refreshToken) {
-    const clientId = process.env.X_CLIENT_ID;
-    const clientSecret = process.env.X_CLIENT_SECRET;
-    if (!clientId || !clientSecret) throw new Error('Para renovar OAuth 2.0 hacen falta X_CLIENT_ID y X_CLIENT_SECRET');
-    const response = await fetch('https://api.x.com/2/oauth2/token', {
-      method: 'POST',
-      headers: {
-        Authorization: `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString('base64')}`,
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: refreshToken }),
-    });
-    if (!response.ok) throw new Error(`No se pudo renovar el token OAuth 2.0 (${response.status}): ${await response.text()}`);
-    const tokens = await response.json();
-    if (tokens.refresh_token && tokens.refresh_token !== refreshToken) {
-      const ghToken = process.env.GH_SECRETS_TOKEN;
-      const repository = process.env.GITHUB_REPOSITORY;
-      if (!ghToken || !repository) throw new Error('X rotó el refresh token; configura GH_SECRETS_TOKEN para guardar el nuevo token en GitHub');
-      execFileSync('gh', ['secret', 'set', 'X_REFRESH_TOKEN', '--repo', repository], {
-        input: tokens.refresh_token,
-        env: { ...process.env, GH_TOKEN: ghToken },
-        stdio: ['pipe', 'ignore', 'pipe'],
-      });
-      console.log('Refresh token renovado y guardado en GitHub Secrets.');
-    }
-    return tokens.access_token;
+function oauth1Header(method, rawUrl, bodyParams = {}) {
+  const consumerKey = process.env.X_OAUTH1_CONSUMER_KEY;
+  const consumerSecret = process.env.X_OAUTH1_CONSUMER_SECRET;
+  const token = process.env.X_OAUTH1_ACCESS_TOKEN;
+  const tokenSecret = process.env.X_OAUTH1_ACCESS_TOKEN_SECRET;
+  if (![consumerKey, consumerSecret, token, tokenSecret].every(Boolean)) {
+    throw new Error('Configura los cuatro secretos X_OAUTH1_* para subir imágenes y publicar.');
   }
 
-  const token = process.env.X_USER_ACCESS_TOKEN;
-  if (!token) throw new Error('Configura X_REFRESH_TOKEN (recomendado) o X_USER_ACCESS_TOKEN');
-  return token;
+  const url = new URL(rawUrl);
+  const oauth = {
+    oauth_consumer_key: consumerKey,
+    oauth_nonce: randomBytes(16).toString('hex'),
+    oauth_signature_method: 'HMAC-SHA1',
+    oauth_timestamp: Math.floor(Date.now() / 1000).toString(),
+    oauth_token: token,
+    oauth_version: '1.0',
+  };
+  const parameters = [
+    ...url.searchParams.entries(),
+    ...Object.entries(bodyParams),
+    ...Object.entries(oauth),
+  ].map(([key, value]) => [encodeURIComponent(key), encodeURIComponent(String(value))])
+    .sort(([ak, av], [bk, bv]) => (ak < bk ? -1 : ak > bk ? 1 : av < bv ? -1 : av > bv ? 1 : 0))
+    .map(([key, value]) => `${key}=${value}`).join('&');
+  const baseUrl = `${url.protocol}//${url.host}${url.pathname}`;
+  const baseString = [method.toUpperCase(), encodeURIComponent(baseUrl), encodeURIComponent(parameters)].join('&');
+  const signingKey = `${encodeURIComponent(consumerSecret)}&${encodeURIComponent(tokenSecret)}`;
+  oauth.oauth_signature = createHmac('sha1', signingKey).update(baseString).digest('base64');
+  return `OAuth ${Object.entries(oauth).map(([key, value]) => `${encodeURIComponent(key)}="${encodeURIComponent(value)}"`).join(', ')}`;
 }
 
 function normalizeTitle(value = '') {
@@ -130,51 +127,44 @@ async function tmdbPosterUrl(entry) {
   }
 }
 
-async function uploadImage(url, token) {
+async function uploadImage(url) {
   const response = await fetch(url);
   if (!response.ok) throw new Error(`No se pudo descargar la portada (${response.status})`);
   const image = Buffer.from(await response.arrayBuffer());
   const form = new FormData();
   form.append('media', new Blob([image], { type: response.headers.get('content-type') ?? 'image/jpeg' }), 'poster.jpg');
-  form.append('media_category', 'tweet_image');
-  const endpoint = 'https://api.x.com/2/media/upload';
-  const upload = await fetch(endpoint, { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: form });
+  const endpoint = 'https://upload.twitter.com/1.1/media/upload.json?media_category=tweet_image';
+  const upload = await fetch(endpoint, {
+    method: 'POST',
+    headers: { Authorization: oauth1Header('POST', endpoint) },
+    body: form,
+  });
   if (!upload.ok) {
     const detail = await upload.text();
-    if (upload.status === 401 || upload.status === 403) {
-      throw new Error(`X rechazó la subida de medios (${upload.status}). El token de usuario se validó previamente; revisa que la autorización OAuth incluya media.write y que la app tenga acceso a la subida de medios. Respuesta: ${detail}`);
-    }
     throw new Error(`X rechazó la portada (${upload.status}): ${detail}`);
   }
   const result = await upload.json();
-  const id = result.data?.id ?? result.data?.media_id;
+  const id = result.media_id_string ?? result.media_id;
   if (!id) throw new Error(`X no devolvió el identificador de la portada: ${JSON.stringify(result)}`);
   return id;
 }
 
-async function validateXUserToken(token) {
-  const response = await fetch('https://api.x.com/2/users/me', {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (!response.ok) {
-    throw new Error(`X no acepta el token de usuario (${response.status}): ${await response.text()}. Renueva el token OAuth 2.0 y comprueba users.read.`);
-  }
-  const { data } = await response.json();
-  console.log(`Token de X validado para @${data.username}.`);
-}
-
-async function publish(entry, token) {
+async function publish(entry) {
   const posterUrl = await tmdbPosterUrl(entry);
-  const mediaId = posterUrl ? await uploadImage(posterUrl, token) : undefined;
+  const mediaId = posterUrl ? await uploadImage(posterUrl) : undefined;
   const details = [entry.rating, entry.review].filter(Boolean).join('\n');
   const text = [`🍿 Acabo de ver '${entry.title}'${entry.year ? ` (${entry.year})` : ''}`, details]
     .filter(Boolean).join('\n') + `\n\n${LETTERBOXD_PROFILE_URL}`;
-  const body = { text, ...(mediaId ? { media: { media_ids: [mediaId] } } : {}) };
-  const endpoint = 'https://api.x.com/2/tweets';
+  const body = { status: text, ...(mediaId ? { media_ids: mediaId } : {}) };
+  const endpoint = 'https://api.x.com/1.1/statuses/update.json';
+  const encodedBody = new URLSearchParams(body);
   const response = await fetch(endpoint, {
     method: 'POST',
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
+    headers: {
+      Authorization: oauth1Header('POST', endpoint, body),
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: encodedBody,
   });
   if (!response.ok) throw new Error(`X rechazó la publicación (${response.status}): ${await response.text()}`);
   console.log(`Publicado: ${text}`);
@@ -198,10 +188,8 @@ if (!state.lastPostedId) {
   const lastIndex = entries.findIndex((entry) => entry.id === state.lastPostedId);
   const pending = lastIndex === -1 ? [entries[0]] : entries.slice(0, lastIndex).reverse();
   if (pending.length) {
-    const token = await accessToken();
-    await validateXUserToken(token);
     for (const entry of pending) {
-      await publish(entry, token);
+      await publish(entry);
       await writeFile(STATE_FILE, `${JSON.stringify({ lastPostedId: entry.id }, null, 2)}\n`);
     }
   } else {
