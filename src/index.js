@@ -19,18 +19,22 @@ function tag(xml, name) {
 
 function parseFeed(xml) {
   return [...xml.matchAll(/<item(?:\s[^>]*)?>([\s\S]*?)<\/item>/gi)].map(([, item]) => {
-    const title = tag(item, 'title').replace(/<[^>]+>/g, '').trim();
+    const feedTitle = tag(item, 'title').replace(/<[^>]+>/g, '').trim();
     const link = tag(item, 'link');
     const id = tag(item, 'guid') || link;
     const description = tag(item, 'description');
     const image = description.match(/<img[^>]+src=["']([^"']+)["']/i)?.[1]
       ?? item.match(/<media:content[^>]+url=["']([^"']+)["']/i)?.[1];
-    const rating = title.match(/(★+½?|½)/)?.[0] ?? '';
-    const filmTitle = title
-      .replace(/\s*[-–—:]?\s*[★½]+\s*$/, '')
-      .replace(/\s+\(\d{4}\)$/, '')
-      .trim();
-    return { id, title: filmTitle, rating, link, image };
+    const filmTitle = tag(item, 'letterboxd:filmTitle')
+      || feedTitle.replace(/\s*,?\s*\d{4}\s*[-–—:]?\s*[★½]+\s*$/, '').trim();
+    const year = tag(item, 'letterboxd:filmYear')
+      || feedTitle.match(/,\s*(\d{4})\s*[-–—:]?\s*[★½]+\s*$/)?.[1]
+      || '';
+    const ratingValue = Number(tag(item, 'letterboxd:memberRating'));
+    const ratingText = tag(item, 'letterboxd:memberRating')
+      ? '⭐'.repeat(Math.floor(ratingValue)) + (ratingValue % 1 >= 0.5 ? '½' : '')
+      : (feedTitle.match(/(★+½?|½)/)?.[0] ?? '').replaceAll('★', '⭐');
+    return { id, title: filmTitle, year, rating: ratingText, link, image };
   }).filter((entry) => entry.id && entry.title);
 }
 
@@ -87,7 +91,7 @@ async function uploadImage(url, token) {
 
 async function publish(entry, token) {
   const mediaId = entry.image ? await uploadImage(entry.image, token) : undefined;
-  const text = `${entry.title}${entry.rating ? ` — ${entry.rating}` : ''}`;
+  const text = `🍿 Acabo de ver '${entry.title}'${entry.year ? ` (${entry.year})` : ''}${entry.rating ? `\n${entry.rating}` : ''}`;
   const body = { text, ...(mediaId ? { media: { media_ids: [mediaId] } } : {}) };
   const endpoint = 'https://api.x.com/2/tweets';
   const response = await fetch(endpoint, {
