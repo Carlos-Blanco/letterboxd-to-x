@@ -1,6 +1,6 @@
 # Letterboxd to X
 
-Publica en X las nuevas valoraciones de Letterboxd, incluyendo un texto como `🍿 Acabo de ver 'Fackham Hall' (2025)` seguido de la valoración con estrellas (`⭐⭐½`), un enlace al perfil de Letterboxd separado por una línea en blanco y la portada cuando el RSS la ofrece. GitHub Actions consulta el feed cada 15 minutos.
+Publica en X las nuevas valoraciones de Letterboxd, incluyendo un texto como `🍿 Acabo de ver 'Fackham Hall' (2025)`, las estrellas (`⭐⭐½`), el texto de la reseña si existe, un enlace al perfil separado por una línea en blanco y la portada cuando el RSS la ofrece. GitHub Actions consulta el feed cada 15 minutos.
 
 ## Configuración
 

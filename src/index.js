@@ -18,12 +18,26 @@ function tag(xml, name) {
   return decode(xml.match(new RegExp(`<${name}(?:\\s[^>]*)?>([\\s\\S]*?)<\\/${name}>`, 'i'))?.[1]);
 }
 
+function extractReview(description) {
+  return decode(description
+    .replace(/<img\b[^>]*>/gi, ' ')
+    .replace(/<p>\s*Watched on\b[\s\S]*?<\/p>/gi, ' ')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/p>\s*<p>/gi, '\n\n')
+    .replace(/<\/?(?:p|div|span)[^>]*>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/[ \t]+/g, ' ')
+    .replace(/\s*\n\s*/g, '\n')
+    .trim());
+}
+
 function parseFeed(xml) {
   return [...xml.matchAll(/<item(?:\s[^>]*)?>([\s\S]*?)<\/item>/gi)].map(([, item]) => {
     const feedTitle = tag(item, 'title').replace(/<[^>]+>/g, '').trim();
     const link = tag(item, 'link');
     const id = tag(item, 'guid') || link;
     const description = tag(item, 'description');
+    const review = extractReview(description);
     const image = description.match(/<img[^>]+src=["']([^"']+)["']/i)?.[1]
       ?? item.match(/<media:content[^>]+url=["']([^"']+)["']/i)?.[1];
     const filmTitle = tag(item, 'letterboxd:filmTitle')
@@ -35,7 +49,7 @@ function parseFeed(xml) {
     const ratingText = tag(item, 'letterboxd:memberRating')
       ? '⭐'.repeat(Math.floor(ratingValue)) + (ratingValue % 1 >= 0.5 ? '½' : '')
       : (feedTitle.match(/(★+½?|½)/)?.[0] ?? '').replaceAll('★', '⭐');
-    return { id, title: filmTitle, year, rating: ratingText, link, image };
+    return { id, title: filmTitle, year, rating: ratingText, review, link, image };
   }).filter((entry) => entry.id && entry.title);
 }
 
@@ -92,7 +106,9 @@ async function uploadImage(url, token) {
 
 async function publish(entry, token) {
   const mediaId = entry.image ? await uploadImage(entry.image, token) : undefined;
-  const text = `🍿 Acabo de ver '${entry.title}'${entry.year ? ` (${entry.year})` : ''}${entry.rating ? `\n${entry.rating}` : ''}\n\n${LETTERBOXD_PROFILE_URL}`;
+  const details = [entry.rating, entry.review].filter(Boolean).join('\n');
+  const text = [`🍿 Acabo de ver '${entry.title}'${entry.year ? ` (${entry.year})` : ''}`, details]
+    .filter(Boolean).join('\n') + `\n\n${LETTERBOXD_PROFILE_URL}`;
   const body = { text, ...(mediaId ? { media: { media_ids: [mediaId] } } : {}) };
   const endpoint = 'https://api.x.com/2/tweets';
   const response = await fetch(endpoint, {
