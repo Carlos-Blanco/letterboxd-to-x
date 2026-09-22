@@ -33,6 +33,11 @@ jobs:
           X_OAUTH1_CONSUMER_SECRET: ${{ secrets.X_OAUTH1_CONSUMER_SECRET }}
           X_OAUTH1_ACCESS_TOKEN: ${{ secrets.X_OAUTH1_ACCESS_TOKEN }}
           X_OAUTH1_ACCESS_TOKEN_SECRET: ${{ secrets.X_OAUTH1_ACCESS_TOKEN_SECRET }}
+          X_USER_ACCESS_TOKEN: ${{ secrets.X_USER_ACCESS_TOKEN }}
+          X_REFRESH_TOKEN: ${{ secrets.X_REFRESH_TOKEN }}
+          X_CLIENT_ID: ${{ secrets.X_CLIENT_ID }}
+          X_CLIENT_SECRET: ${{ secrets.X_CLIENT_SECRET }}
+          GH_SECRETS_TOKEN: ${{ secrets.GH_SECRETS_TOKEN }}
           TMDB_API_READ_ACCESS_TOKEN: ${{ secrets.TMDB_API_READ_ACCESS_TOKEN }}
 
       - name: Save processed feed position

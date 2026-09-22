@@ -1,4 +1,5 @@
 import { readFile, writeFile } from 'node:fs/promises';
+import { execFileSync } from 'node:child_process';
 import { createHmac, randomBytes } from 'node:crypto';
 
 const FEED_URL = process.env.LETTERBOXD_RSS_URL ?? 'https://letterboxd.com/charlie_white/rss/';
@@ -86,6 +87,42 @@ function oauth1Header(method, rawUrl, bodyParams = {}) {
   return `OAuth ${Object.entries(oauth).map(([key, value]) => `${encodeURIComponent(key)}="${encodeURIComponent(value)}"`).join(', ')}`;
 }
 
+async function oauth2AccessToken() {
+  const refreshToken = process.env.X_REFRESH_TOKEN;
+  if (!refreshToken) {
+    const token = process.env.X_USER_ACCESS_TOKEN;
+    if (!token) throw new Error('Configura X_REFRESH_TOKEN o X_USER_ACCESS_TOKEN para publicar.');
+    return token;
+  }
+
+  const clientId = process.env.X_CLIENT_ID;
+  const clientSecret = process.env.X_CLIENT_SECRET;
+  if (!clientId || !clientSecret) throw new Error('Para renovar OAuth 2.0 hacen falta X_CLIENT_ID y X_CLIENT_SECRET.');
+  const response = await fetch('https://api.x.com/2/oauth2/token', {
+    method: 'POST',
+    headers: {
+      Authorization: `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString('base64')}`,
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: refreshToken }),
+  });
+  if (!response.ok) throw new Error(`No se pudo renovar OAuth 2.0 (${response.status}): ${await response.text()}`);
+  const tokens = await response.json();
+
+  if (tokens.refresh_token && tokens.refresh_token !== refreshToken) {
+    const ghToken = process.env.GH_SECRETS_TOKEN;
+    const repository = process.env.GITHUB_REPOSITORY;
+    if (!ghToken || !repository) throw new Error('X rotó el refresh token; configura GH_SECRETS_TOKEN para guardar el nuevo en GitHub.');
+    execFileSync('gh', ['secret', 'set', 'X_REFRESH_TOKEN', '--repo', repository], {
+      input: tokens.refresh_token,
+      env: { ...process.env, GH_TOKEN: ghToken },
+      stdio: ['pipe', 'ignore', 'pipe'],
+    });
+    console.log('Refresh token OAuth 2.0 renovado y guardado en GitHub Secrets.');
+  }
+  return tokens.access_token;
+}
+
 function normalizeTitle(value = '') {
   return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
     .replace(/[^a-z0-9]+/g, ' ').trim();
@@ -149,22 +186,21 @@ async function uploadImage(url) {
   return id;
 }
 
-async function publish(entry) {
+async function publish(entry, accessToken) {
   const posterUrl = await tmdbPosterUrl(entry);
   const mediaId = posterUrl ? await uploadImage(posterUrl) : undefined;
   const details = [entry.rating, entry.review].filter(Boolean).join('\n');
   const text = [`🍿 Acabo de ver '${entry.title}'${entry.year ? ` (${entry.year})` : ''}`, details]
     .filter(Boolean).join('\n') + `\n\n${LETTERBOXD_PROFILE_URL}`;
-  const body = { status: text, ...(mediaId ? { media_ids: mediaId } : {}) };
-  const endpoint = 'https://api.x.com/1.1/statuses/update.json';
-  const encodedBody = new URLSearchParams(body);
+  const body = { text, ...(mediaId ? { media: { media_ids: [mediaId] } } : {}) };
+  const endpoint = 'https://api.x.com/2/tweets';
   const response = await fetch(endpoint, {
     method: 'POST',
     headers: {
-      Authorization: oauth1Header('POST', endpoint, body),
-      'Content-Type': 'application/x-www-form-urlencoded',
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
     },
-    body: encodedBody,
+    body: JSON.stringify(body),
   });
   if (!response.ok) throw new Error(`X rechazó la publicación (${response.status}): ${await response.text()}`);
   console.log(`Publicado: ${text}`);
@@ -188,8 +224,9 @@ if (!state.lastPostedId) {
   const lastIndex = entries.findIndex((entry) => entry.id === state.lastPostedId);
   const pending = lastIndex === -1 ? [entries[0]] : entries.slice(0, lastIndex).reverse();
   if (pending.length) {
+    const accessToken = await oauth2AccessToken();
     for (const entry of pending) {
-      await publish(entry);
+      await publish(entry, accessToken);
       await writeFile(STATE_FILE, `${JSON.stringify({ lastPostedId: entry.id }, null, 2)}\n`);
     }
   } else {
