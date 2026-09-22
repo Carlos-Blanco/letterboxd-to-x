@@ -3,6 +3,7 @@ import { execFileSync } from 'node:child_process';
 
 const FEED_URL = process.env.LETTERBOXD_RSS_URL ?? 'https://letterboxd.com/charlie_white/rss/';
 const LETTERBOXD_PROFILE_URL = process.env.LETTERBOXD_PROFILE_URL ?? 'https://letterboxd.com/charlie_white/';
+const TMDB_API_READ_ACCESS_TOKEN = process.env.TMDB_API_READ_ACCESS_TOKEN;
 const STATE_FILE = new URL('../last-posted.json', import.meta.url);
 
 function decode(value = '') {
@@ -88,6 +89,47 @@ async function accessToken() {
   return token;
 }
 
+function normalizeTitle(value = '') {
+  return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+async function tmdbPosterUrl(entry) {
+  if (!TMDB_API_READ_ACCESS_TOKEN) return entry.image;
+
+  try {
+    const params = new URLSearchParams({ query: entry.title, language: 'en-US' });
+    if (entry.year) params.set('primary_release_year', entry.year);
+    const response = await fetch(`https://api.themoviedb.org/3/search/movie?${params}`, {
+      headers: {
+        Authorization: `Bearer ${TMDB_API_READ_ACCESS_TOKEN}`,
+        Accept: 'application/json',
+      },
+    });
+    if (!response.ok) {
+      console.warn(`TMDB no respondió (${response.status}); usaré la imagen del RSS si existe.`);
+      return entry.image;
+    }
+
+    const { results = [] } = await response.json();
+    const title = normalizeTitle(entry.title);
+    const match = results.find((film) => {
+      const titleMatches = [film.title, film.original_title].some((candidate) => normalizeTitle(candidate) === title);
+      const yearMatches = !entry.year || film.release_date?.startsWith(`${entry.year}-`);
+      return titleMatches && yearMatches && film.poster_path;
+    });
+
+    if (!match) {
+      console.warn(`TMDB no encontró una coincidencia segura para «${entry.title}»${entry.year ? ` (${entry.year})` : ''}; usaré la imagen del RSS si existe.`);
+      return entry.image;
+    }
+    return `https://image.tmdb.org/t/p/w500${match.poster_path}`;
+  } catch (error) {
+    console.warn(`Error consultando TMDB (${error.message}); usaré la imagen del RSS si existe.`);
+    return entry.image;
+  }
+}
+
 async function uploadImage(url, token) {
   const response = await fetch(url);
   if (!response.ok) throw new Error(`No se pudo descargar la portada (${response.status})`);
@@ -105,7 +147,8 @@ async function uploadImage(url, token) {
 }
 
 async function publish(entry, token) {
-  const mediaId = entry.image ? await uploadImage(entry.image, token) : undefined;
+  const posterUrl = await tmdbPosterUrl(entry);
+  const mediaId = posterUrl ? await uploadImage(posterUrl, token) : undefined;
   const details = [entry.rating, entry.review].filter(Boolean).join('\n');
   const text = [`🍿 Acabo de ver '${entry.title}'${entry.year ? ` (${entry.year})` : ''}`, details]
     .filter(Boolean).join('\n') + `\n\n${LETTERBOXD_PROFILE_URL}`;

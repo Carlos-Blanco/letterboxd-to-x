@@ -30,6 +30,7 @@ jobs:
           LETTERBOXD_RSS_URL: https://letterboxd.com/charlie_white/rss/
           LETTERBOXD_PROFILE_URL: https://letterboxd.com/charlie_white/
           X_USER_ACCESS_TOKEN: ${{ secrets.X_USER_ACCESS_TOKEN }}
+          TMDB_API_READ_ACCESS_TOKEN: ${{ secrets.TMDB_API_READ_ACCESS_TOKEN }}
 
       - name: Save processed feed position
         run: |
