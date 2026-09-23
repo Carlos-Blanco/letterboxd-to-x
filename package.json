@@ -5,8 +5,7 @@
   "type": "module",
   "scripts": {
     "start": "node src/index.js",
-    "authorize": "node scripts/authorize.js",
-    "check-x": "node scripts/check-x.js"
+    "check-buffer": "node scripts/check-buffer.js"
   },
   "engines": {
     "node": ">=20"

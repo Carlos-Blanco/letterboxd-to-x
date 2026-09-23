@@ -31,10 +31,9 @@ jobs:
         run: node src/index.js
         env:
           LETTERBOXD_RSS_URL: https://letterboxd.com/charlie_white/rss/
-          X_OAUTH1_CONSUMER_KEY: ${{ secrets.X_OAUTH1_CONSUMER_KEY }}
-          X_OAUTH1_CONSUMER_SECRET: ${{ secrets.X_OAUTH1_CONSUMER_SECRET }}
-          X_OAUTH1_ACCESS_TOKEN: ${{ secrets.X_OAUTH1_ACCESS_TOKEN }}
-          X_OAUTH1_ACCESS_TOKEN_SECRET: ${{ secrets.X_OAUTH1_ACCESS_TOKEN_SECRET }}
+          BUFFER_API_KEY: ${{ secrets.BUFFER_API_KEY }}
+          # Opcional: sin él se usa la única cuenta de X conectada en Buffer.
+          BUFFER_CHANNEL_ID: ${{ secrets.BUFFER_CHANNEL_ID }}
           TMDB_API_READ_ACCESS_TOKEN: ${{ secrets.TMDB_API_READ_ACCESS_TOKEN }}
 
       # También si falla la publicación: las entradas ya publicadas en esta

@@ -1,5 +1,5 @@
 import { readFile, writeFile } from 'node:fs/promises';
-import { hasOauth1, oauth1Header, oauth2AccessToken, uploadImageFromUrl } from './x.js';
+import { resolveChannelId, sharePost } from './buffer.js';
 
 const FEED_URL = process.env.LETTERBOXD_RSS_URL ?? 'https://letterboxd.com/charlie_white/rss/';
 const LETTERBOXD_PROFILE_URL = process.env.LETTERBOXD_PROFILE_URL ?? '';
@@ -129,9 +129,6 @@ function composeText(entry, review) {
   const header = `🍿 Acabo de ver '${entry.title}'${entry.year ? ` (${entry.year})` : ''}`;
   const details = [entry.rating, review].filter(Boolean).join('\n');
   const cuerpo = [header, details].filter(Boolean).join('\n');
-  // X cobra $0,015 por post (y otro tanto por la portada), pero $0,200 si el
-  // texto contiene una URL: enlazar el perfil multiplica por 7 el coste de cada
-  // publicación. Sin LETTERBOXD_PROFILE_URL se publica sin enlace.
   return LETTERBOXD_PROFILE_URL ? `${cuerpo}\n\n${LETTERBOXD_PROFILE_URL}` : cuerpo;
 }
 
@@ -155,50 +152,22 @@ function buildText(entry) {
   return characters.join('');
 }
 
-async function publish(entry, accessToken) {
+async function publish(entry, channelId) {
   const posterUrl = await tmdbPosterUrl(entry);
-  let media;
-  if (posterUrl) {
-    try {
-      media = await uploadImageFromUrl(posterUrl, accessToken);
-    } catch (error) {
-      // Publicamos igualmente: si no, la entrada se queda atascada y el workflow
-      // reintenta la misma película cada 15 minutos sin publicar nada.
-      console.warn(`No se pudo adjuntar la portada de «${entry.title}» (${error.message}); publico solo el texto.`);
-    }
-  } else {
-    console.warn(`Sin portada disponible para «${entry.title}»; publico solo el texto.`);
-  }
+  if (!posterUrl) console.warn(`Sin portada disponible para «${entry.title}»; publico solo el texto.`);
 
   const text = buildText(entry);
-  const body = { text, ...(media ? { media: { media_ids: [media.id] } } : {}) };
-  const endpoint = 'https://api.x.com/2/tweets';
-  const response = await fetch(endpoint, {
-    method: 'POST',
-    headers: {
-      // Sin accessToken firmamos con OAuth 1.0a: con cuerpo JSON solo entran en
-      // la firma los parámetros oauth_*.
-      Authorization: accessToken ? `Bearer ${accessToken}` : oauth1Header('POST', endpoint),
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(body),
-  });
-  if (!response.ok) {
-    const detail = await response.text();
-    if (response.status === 403 && /duplicate content/i.test(detail)) {
-      // Ya se publicó en una ejecución que no llegó a guardar la posición. Si
-      // lanzáramos el error, la cola se quedaría atascada en esta entrada.
-      console.warn(`X ya tenía publicado «${entry.title}»; paso a la siguiente.`);
-      return;
-    }
-    if (response.status === 402) {
-      // Pago por uso: sin saldo X no acepta escrituras. No es un fallo de
-      // credenciales ni de código, así que lo decimos sin stack trace.
-      throw new Error('El proyecto de X se ha quedado sin créditos (402). Recárgalos en Facturación → Créditos de la consola; la valoración queda en cola y se publicará en la siguiente ejecución.');
-    }
-    throw new Error(`X rechazó la publicación (${response.status}): ${detail}`);
+  let result = await sharePost(channelId, text, posterUrl);
+  let withPoster = Boolean(posterUrl);
+  if (result.rejection && posterUrl) {
+    // Publicamos igualmente sin portada: si no, la entrada se queda atascada y
+    // el workflow reintenta la misma película cada 15 minutos sin publicar nada.
+    console.warn(`Buffer rechazó el post de «${entry.title}» con portada (${result.rejection}); lo intento solo con el texto.`);
+    result = await sharePost(channelId, text);
+    withPoster = false;
   }
-  console.log(`Publicado${media ? ` con portada (subida con ${media.via})` : ' sin portada'}: ${text}`);
+  if (result.rejection) throw new Error(`Buffer rechazó el post de «${entry.title}»: ${result.rejection}`);
+  console.log(`Enviado a X vía Buffer${withPoster ? ' con portada' : ' sin portada'} (post ${result.post.id}): ${text}`);
 }
 
 async function readState() {
@@ -207,7 +176,7 @@ async function readState() {
 }
 
 process.on('uncaughtException', (error) => {
-  // Un fallo esperable (sin créditos, RSS caído) no necesita volcar la pila,
+  // Un fallo esperable (clave de Buffer inválida, RSS caído) no necesita volcar la pila,
   // pero sí la causa: un error de red en fetch solo dice «fetch failed».
   const cause = error.cause?.code ?? error.cause?.message;
   console.error(cause ? `${error.message} (${cause})` : error.message);
@@ -227,14 +196,9 @@ if (!state.lastPostedId) {
   const lastIndex = entries.findIndex((entry) => entry.id === state.lastPostedId);
   const pending = lastIndex === -1 ? [entries[0]] : entries.slice(0, lastIndex).reverse();
   if (pending.length) {
-    if (LETTERBOXD_PROFILE_URL) {
-      console.log(`${pending.length} publicación(es) con enlace al perfil: X cobra $0,200 por post con URL frente a $0,015 sin ella. Quita LETTERBOXD_PROFILE_URL para publicar sin él.`);
-    }
-    // OAuth 1.0a primero: sus tokens no caducan, así que no hay refresh token
-    // que rotar ni que perder. OAuth 2.0 queda como alternativa.
-    const accessToken = hasOauth1() ? undefined : await oauth2AccessToken();
+    const channelId = await resolveChannelId();
     for (const entry of pending) {
-      await publish(entry, accessToken);
+      await publish(entry, channelId);
       await writeFile(STATE_FILE, `${JSON.stringify({ lastPostedId: entry.id }, null, 2)}\n`);
     }
   } else {
