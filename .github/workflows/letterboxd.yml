@@ -1,9 +1,10 @@
 name: Letterboxd to X
 
 on:
+  # Respaldo: GitHub retrasa o descarta muchas ejecuciones programadas, sobre
+  # todo en el minuto :00. El disparador fiable es cron-job.org, que llama a
+  # workflow_dispatch cada 15 minutos (ver README).
   schedule:
-    # Fuera del minuto :00, el de más carga: GitHub retrasa o descarta ahí
-    # muchas ejecuciones programadas.
     - cron: '7,22,37,52 * * * *'
   workflow_dispatch:
 
@@ -21,6 +22,11 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
+        with:
+          # La punta de la rama, no el commit que había al dispararse: una
+          # ejecución que esperaba en la cola de concurrencia debe ver el
+          # last-posted.json que acaba de guardar la anterior.
+          ref: ${{ github.ref_name }}
 
       - name: Set up Node.js
         uses: actions/setup-node@v7
