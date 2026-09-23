@@ -39,8 +39,7 @@ function extractReview(description) {
 function parseFeed(xml) {
   return [...xml.matchAll(/<item(?:\s[^>]*)?>([\s\S]*?)<\/item>/gi)].map(([, item]) => {
     const feedTitle = tag(item, 'title').replace(/<[^>]+>/g, '').trim();
-    const link = tag(item, 'link');
-    const id = tag(item, 'guid') || link;
+    const id = tag(item, 'guid') || tag(item, 'link');
     const description = tag(item, 'description');
     const review = extractReview(description);
     const image = description.match(/<img[^>]+src=["']([^"']+)["']/i)?.[1]
@@ -55,7 +54,7 @@ function parseFeed(xml) {
     const ratingText = memberRating
       ? '⭐'.repeat(Math.floor(ratingValue)) + (ratingValue % 1 >= 0.5 ? '½' : '')
       : '';
-    return { id, title: filmTitle, year, rating: ratingText, review, link, image, tmdbId: tag(item, 'tmdb:movieId') };
+    return { id, title: filmTitle, year, rating: ratingText, review, image, tmdbId: tag(item, 'tmdb:movieId') };
   }).filter((entry) => entry.id && entry.title && entry.rating);
   // El RSS mezcla las entradas del diario con las listas del perfil
   // (`letterboxd-list-*`), que no llevan `memberRating`: exigir una valoración
@@ -126,7 +125,7 @@ function postLength(text) {
 }
 
 function composeText(entry, review) {
-  const header = `🍿 Acabo de ver '${entry.title}'${entry.year ? ` (${entry.year})` : ''}`;
+  const header = `🍿 '${entry.title}'${entry.year ? ` (${entry.year})` : ''}`;
   const details = [entry.rating, review].filter(Boolean).join('\n');
   const cuerpo = [header, details].filter(Boolean).join('\n');
   return LETTERBOXD_PROFILE_URL ? `${cuerpo}\n\n${LETTERBOXD_PROFILE_URL}` : cuerpo;

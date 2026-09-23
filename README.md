@@ -44,6 +44,19 @@ En `Settings → Actions → General`, permite que GitHub Actions lea y escriba 
 
 El RSS configurado es `https://letterboxd.com/charlie_white/rss/`; se puede cambiar con `LETTERBOXD_RSS_URL`.
 
+## Ejecución cada 15 minutos
+
+El `schedule` del workflow queda solo como respaldo: GitHub retrasa o descarta muchas ejecuciones programadas, a veces durante horas. Lo que asegura la frecuencia es [cron-job.org](https://cron-job.org), que lanza el workflow cada 15 minutos por la API de GitHub. Las ejecuciones lanzadas así no se desactivan tras 60 días sin actividad en el repositorio, como les pasa a las programadas.
+
+1. Crea un [fine-grained token](https://github.com/settings/personal-access-tokens/new) con acceso solo a este repositorio y el permiso **Actions: Read and write**.
+2. En cron-job.org crea un cronjob con:
+   - URL: `https://api.github.com/repos/Carlos-Blanco/letterboxd-to-x/actions/workflows/letterboxd.yml/dispatches`
+   - Horario: cada 15 minutos
+   - Método: `POST`, con el cuerpo `{"ref":"main"}`
+   - Cabeceras: `Authorization: Bearer <token>`, `Accept: application/vnd.github+json` y `X-GitHub-Api-Version: 2022-11-28`
+
+GitHub responde `204` cuando acepta la petición. Si coinciden dos ejecuciones, la segunda espera a que termine la primera y parte de la posición que esta acaba de guardar.
+
 ## Ejecución local
 
 Requiere Node.js 20 o superior. Exporta `BUFFER_API_KEY` (y `TMDB_API_READ_ACCESS_TOKEN` si quieres) y ejecuta `npm start`. Publica de verdad y actualiza `last-posted.json`.
