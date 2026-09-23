@@ -1,6 +1,5 @@
-// Cliente de la API GraphQL de Buffer. Buffer publica en X con su propio acceso
-// a la API, así que no hay que pagar la de X ni firmar peticiones OAuth. Vive
-// aparte de index.js para que el script de diagnóstico pruebe el mismo código.
+// Cliente de la API GraphQL de Buffer, que publica en la cuenta de X conectada.
+// Vive aparte de index.js para que el script de diagnóstico pruebe el mismo código.
 const ENDPOINT = 'https://api.buffer.com';
 
 async function graphql(query, variables = {}) {

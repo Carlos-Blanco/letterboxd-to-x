@@ -2,7 +2,7 @@
 
 Publica en X las nuevas valoraciones del RSS de Letterboxd cada 15 minutos. El post incluye el título y año, la valoración con estrellas, el texto de la reseña si existe y la portada. Para añadir el enlace al perfil, define `LETTERBOXD_PROFILE_URL` en el workflow.
 
-Publica a través de [Buffer](https://buffer.com), cuyo plan gratuito incluye API. Así no hace falta la API de X, que desde febrero de 2026 es solo de pago por uso, ni gestionar sus credenciales OAuth.
+Publica a través de la API del plan gratuito de [Buffer](https://buffer.com), que envía cada post a la cuenta de X conectada.
 
 Solo se publican las entradas del diario que llevan valoración: el RSS también incluye las listas del perfil (`letterboxd-list-*`) y las películas vistas sin puntuar, y esas se ignoran. Si la reseña no cabe en los 280 caracteres de X, se recorta por palabras. Si Buffer rechaza la portada, el post se publica igualmente solo con texto para que la cola no se quede atascada.
 
