@@ -64,6 +64,13 @@ export async function oauth2AccessToken() {
   const clientId = process.env.X_CLIENT_ID;
   const clientSecret = process.env.X_CLIENT_SECRET;
   if (!clientId || !clientSecret) throw new Error('Para renovar OAuth 2.0 hacen falta X_CLIENT_ID y X_CLIENT_SECRET.');
+  // X invalida el refresh token en cuanto lo canjea y devuelve otro. Si no hay
+  // dónde guardar el nuevo, mejor no gastarlo: perderlo obliga a reautorizar.
+  const ghToken = process.env.GH_SECRETS_TOKEN;
+  const repository = process.env.GITHUB_REPOSITORY;
+  if (!ghToken || !repository) {
+    throw new Error('Renovar X_REFRESH_TOKEN lo invalida y hay que guardar el nuevo: configura GH_SECRETS_TOKEN (en local, usa X_USER_ACCESS_TOKEN).');
+  }
   const response = await fetch('https://api.x.com/2/oauth2/token', {
     method: 'POST',
     headers: {
@@ -76,13 +83,10 @@ export async function oauth2AccessToken() {
   const tokens = await response.json();
 
   if (tokens.scope && !tokens.scope.split(/\s+/).includes('media.write')) {
-    console.warn(`El token OAuth 2.0 no incluye media.write (tiene: ${tokens.scope}); la portada se subirá con OAuth 1.0a.`);
+    console.warn(`El token OAuth 2.0 no incluye media.write (tiene: ${tokens.scope}); la portada no se podrá subir y se publicará solo el texto.`);
   }
 
   if (tokens.refresh_token && tokens.refresh_token !== refreshToken) {
-    const ghToken = process.env.GH_SECRETS_TOKEN;
-    const repository = process.env.GITHUB_REPOSITORY;
-    if (!ghToken || !repository) throw new Error('X rotó el refresh token; configura GH_SECRETS_TOKEN para guardar el nuevo en GitHub.');
     execFileSync('gh', ['secret', 'set', 'X_REFRESH_TOKEN', '--repo', repository], {
       input: tokens.refresh_token,
       env: { ...process.env, GH_TOKEN: ghToken },
@@ -107,8 +111,7 @@ function mediaForm(bytes, contentType) {
 // media.write) y OAuth 1.0a de usuario.
 export async function uploadMedia(bytes, contentType, accessToken) {
   // OAuth 1.0a va primero: el generador de tokens de la consola de X no ofrece
-  // el scope media.write, así que el intento con OAuth 2.0 casi siempre falla, y
-  // en un proyecto de pago por uso cada petición desperdiciada cuesta dinero.
+  // el scope media.write, así que el intento con OAuth 2.0 casi siempre falla.
   const attempts = [];
   if (hasOauth1()) attempts.push(['OAuth 1.0a', () => oauth1Header('POST', MEDIA_UPLOAD_ENDPOINT)]);
   if (accessToken) attempts.push(['OAuth 2.0', () => `Bearer ${accessToken}`]);

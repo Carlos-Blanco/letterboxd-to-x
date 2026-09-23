@@ -36,25 +36,36 @@ async function probeUpload(label, authorization) {
 }
 
 const accessToken = process.env.X_USER_ACCESS_TOKEN;
-let anyWorks = false;
+// El bot usa OAuth 1.0a en cuanto están los cuatro secretos, así que el
+// veredicto depende solo del método que va a usar.
+const usesOauth1 = hasOauth1();
+let oauth1Works = false;
+let oauth2Works = false;
 
 if (accessToken) {
   const me = await fetch('https://api.x.com/2/users/me', { headers: { Authorization: `Bearer ${accessToken}` } });
   const body = await me.text();
   if (me.ok) console.log(`✅ OAuth 2.0: token válido, cuenta @${JSON.parse(body).data.username}`);
   else console.log(`❌ OAuth 2.0: el token no sirve (${me.status}). Si es 401 ha caducado; duran 2 h.\n   ${body.replace(/\n\s*/g, ' ').slice(0, 300)}`);
-  anyWorks = (await probeUpload('OAuth 2.0 + media.write', `Bearer ${accessToken}`)) || anyWorks;
+  oauth2Works = await probeUpload('OAuth 2.0 + media.write', `Bearer ${accessToken}`);
 } else {
   console.log('➖ OAuth 2.0: sin X_USER_ACCESS_TOKEN, no lo pruebo.');
 }
 
-if (hasOauth1()) {
-  anyWorks = (await probeUpload('OAuth 1.0a', oauth1Header('POST', MEDIA_UPLOAD_ENDPOINT))) || anyWorks;
+if (usesOauth1) {
+  oauth1Works = await probeUpload('OAuth 1.0a', oauth1Header('POST', MEDIA_UPLOAD_ENDPOINT));
 } else {
   console.log('➖ OAuth 1.0a: faltan los cuatro secretos X_OAUTH1_*, no lo pruebo.');
 }
 
-console.log(anyWorks
-  ? '\nHay al menos un método válido para la portada: el bot lo usará.'
-  : '\nNingún método puede subir la portada; los posts saldrían solo con texto.');
-process.exitCode = anyWorks ? 0 : 1;
+const botWorks = usesOauth1 ? oauth1Works : oauth2Works;
+if (usesOauth1) {
+  console.log(botWorks
+    ? '\nEl bot usa OAuth 1.0a (están los cuatro X_OAUTH1_*) y puede subir la portada.'
+    : '\nEl bot usa OAuth 1.0a porque están los cuatro X_OAUTH1_*, y falla: tampoco podrá publicar. OAuth 2.0 no se usa mientras existan.');
+} else {
+  console.log(botWorks
+    ? '\nSin X_OAUTH1_*, el bot usa OAuth 2.0 y este token sube la portada.'
+    : '\nEl método que usará el bot no puede subir la portada; los posts saldrían solo con texto.');
+}
+process.exitCode = botWorks ? 0 : 1;

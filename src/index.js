@@ -1,8 +1,8 @@
 import { readFile, writeFile } from 'node:fs/promises';
-import { oauth2AccessToken, uploadImageFromUrl } from './x.js';
+import { hasOauth1, oauth1Header, oauth2AccessToken, uploadImageFromUrl } from './x.js';
 
 const FEED_URL = process.env.LETTERBOXD_RSS_URL ?? 'https://letterboxd.com/charlie_white/rss/';
-const LETTERBOXD_PROFILE_URL = process.env.LETTERBOXD_PROFILE_URL ?? 'https://letterboxd.com/charlie_white/';
+const LETTERBOXD_PROFILE_URL = process.env.LETTERBOXD_PROFILE_URL ?? '';
 const TMDB_API_READ_ACCESS_TOKEN = process.env.TMDB_API_READ_ACCESS_TOKEN;
 const STATE_FILE = new URL('../last-posted.json', import.meta.url);
 // X cuenta 280 «unidades»: cada URL pesa 23 pase lo que pase y los caracteres
@@ -128,7 +128,11 @@ function postLength(text) {
 function composeText(entry, review) {
   const header = `🍿 Acabo de ver '${entry.title}'${entry.year ? ` (${entry.year})` : ''}`;
   const details = [entry.rating, review].filter(Boolean).join('\n');
-  return `${[header, details].filter(Boolean).join('\n')}\n\n${LETTERBOXD_PROFILE_URL}`;
+  const cuerpo = [header, details].filter(Boolean).join('\n');
+  // X cobra $0,015 por post (y otro tanto por la portada), pero $0,200 si el
+  // texto contiene una URL: enlazar el perfil multiplica por 7 el coste de cada
+  // publicación. Sin LETTERBOXD_PROFILE_URL se publica sin enlace.
+  return LETTERBOXD_PROFILE_URL ? `${cuerpo}\n\n${LETTERBOXD_PROFILE_URL}` : cuerpo;
 }
 
 function buildText(entry) {
@@ -172,13 +176,21 @@ async function publish(entry, accessToken) {
   const response = await fetch(endpoint, {
     method: 'POST',
     headers: {
-      Authorization: `Bearer ${accessToken}`,
+      // Sin accessToken firmamos con OAuth 1.0a: con cuerpo JSON solo entran en
+      // la firma los parámetros oauth_*.
+      Authorization: accessToken ? `Bearer ${accessToken}` : oauth1Header('POST', endpoint),
       'Content-Type': 'application/json',
     },
     body: JSON.stringify(body),
   });
   if (!response.ok) {
     const detail = await response.text();
+    if (response.status === 403 && /duplicate content/i.test(detail)) {
+      // Ya se publicó en una ejecución que no llegó a guardar la posición. Si
+      // lanzáramos el error, la cola se quedaría atascada en esta entrada.
+      console.warn(`X ya tenía publicado «${entry.title}»; paso a la siguiente.`);
+      return;
+    }
     if (response.status === 402) {
       // Pago por uso: sin saldo X no acepta escrituras. No es un fallo de
       // credenciales ni de código, así que lo decimos sin stack trace.
@@ -195,8 +207,10 @@ async function readState() {
 }
 
 process.on('uncaughtException', (error) => {
-  // Un fallo esperable (sin créditos, RSS caído) no necesita volcar la pila.
-  console.error(error.message);
+  // Un fallo esperable (sin créditos, RSS caído) no necesita volcar la pila,
+  // pero sí la causa: un error de red en fetch solo dice «fetch failed».
+  const cause = error.cause?.code ?? error.cause?.message;
+  console.error(cause ? `${error.message} (${cause})` : error.message);
   process.exit(1);
 });
 
@@ -213,7 +227,12 @@ if (!state.lastPostedId) {
   const lastIndex = entries.findIndex((entry) => entry.id === state.lastPostedId);
   const pending = lastIndex === -1 ? [entries[0]] : entries.slice(0, lastIndex).reverse();
   if (pending.length) {
-    const accessToken = await oauth2AccessToken();
+    if (LETTERBOXD_PROFILE_URL) {
+      console.log(`${pending.length} publicación(es) con enlace al perfil: X cobra $0,200 por post con URL frente a $0,015 sin ella. Quita LETTERBOXD_PROFILE_URL para publicar sin él.`);
+    }
+    // OAuth 1.0a primero: sus tokens no caducan, así que no hay refresh token
+    // que rotar ni que perder. OAuth 2.0 queda como alternativa.
+    const accessToken = hasOauth1() ? undefined : await oauth2AccessToken();
     for (const entry of pending) {
       await publish(entry, accessToken);
       await writeFile(STATE_FILE, `${JSON.stringify({ lastPostedId: entry.id }, null, 2)}\n`);
