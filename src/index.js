@@ -1,8 +1,8 @@
 import { readFile, writeFile } from 'node:fs/promises';
-import { oauth2AccessToken, uploadImageFromUrl } from './x.js';
+import { resolveChannelId, sharePost } from './buffer.js';
 
 const FEED_URL = process.env.LETTERBOXD_RSS_URL ?? 'https://letterboxd.com/charlie_white/rss/';
-const LETTERBOXD_PROFILE_URL = process.env.LETTERBOXD_PROFILE_URL ?? 'https://letterboxd.com/charlie_white/';
+const LETTERBOXD_PROFILE_URL = process.env.LETTERBOXD_PROFILE_URL ?? '';
 const TMDB_API_READ_ACCESS_TOKEN = process.env.TMDB_API_READ_ACCESS_TOKEN;
 const STATE_FILE = new URL('../last-posted.json', import.meta.url);
 // X cuenta 280 «unidades»: cada URL pesa 23 pase lo que pase y los caracteres
@@ -128,7 +128,8 @@ function postLength(text) {
 function composeText(entry, review) {
   const header = `🍿 Acabo de ver '${entry.title}'${entry.year ? ` (${entry.year})` : ''}`;
   const details = [entry.rating, review].filter(Boolean).join('\n');
-  return `${[header, details].filter(Boolean).join('\n')}\n\n${LETTERBOXD_PROFILE_URL}`;
+  const cuerpo = [header, details].filter(Boolean).join('\n');
+  return LETTERBOXD_PROFILE_URL ? `${cuerpo}\n\n${LETTERBOXD_PROFILE_URL}` : cuerpo;
 }
 
 function buildText(entry) {
@@ -151,42 +152,22 @@ function buildText(entry) {
   return characters.join('');
 }
 
-async function publish(entry, accessToken) {
+async function publish(entry, channelId) {
   const posterUrl = await tmdbPosterUrl(entry);
-  let media;
-  if (posterUrl) {
-    try {
-      media = await uploadImageFromUrl(posterUrl, accessToken);
-    } catch (error) {
-      // Publicamos igualmente: si no, la entrada se queda atascada y el workflow
-      // reintenta la misma película cada 15 minutos sin publicar nada.
-      console.warn(`No se pudo adjuntar la portada de «${entry.title}» (${error.message}); publico solo el texto.`);
-    }
-  } else {
-    console.warn(`Sin portada disponible para «${entry.title}»; publico solo el texto.`);
-  }
+  if (!posterUrl) console.warn(`Sin portada disponible para «${entry.title}»; publico solo el texto.`);
 
   const text = buildText(entry);
-  const body = { text, ...(media ? { media: { media_ids: [media.id] } } : {}) };
-  const endpoint = 'https://api.x.com/2/tweets';
-  const response = await fetch(endpoint, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(body),
-  });
-  if (!response.ok) {
-    const detail = await response.text();
-    if (response.status === 402) {
-      // Pago por uso: sin saldo X no acepta escrituras. No es un fallo de
-      // credenciales ni de código, así que lo decimos sin stack trace.
-      throw new Error('El proyecto de X se ha quedado sin créditos (402). Recárgalos en Facturación → Créditos de la consola; la valoración queda en cola y se publicará en la siguiente ejecución.');
-    }
-    throw new Error(`X rechazó la publicación (${response.status}): ${detail}`);
+  let result = await sharePost(channelId, text, posterUrl);
+  let withPoster = Boolean(posterUrl);
+  if (result.rejection && posterUrl) {
+    // Publicamos igualmente sin portada: si no, la entrada se queda atascada y
+    // el workflow reintenta la misma película cada 15 minutos sin publicar nada.
+    console.warn(`Buffer rechazó el post de «${entry.title}» con portada (${result.rejection}); lo intento solo con el texto.`);
+    result = await sharePost(channelId, text);
+    withPoster = false;
   }
-  console.log(`Publicado${media ? ` con portada (subida con ${media.via})` : ' sin portada'}: ${text}`);
+  if (result.rejection) throw new Error(`Buffer rechazó el post de «${entry.title}»: ${result.rejection}`);
+  console.log(`Enviado a X vía Buffer${withPoster ? ' con portada' : ' sin portada'} (post ${result.post.id}): ${text}`);
 }
 
 async function readState() {
@@ -195,8 +176,10 @@ async function readState() {
 }
 
 process.on('uncaughtException', (error) => {
-  // Un fallo esperable (sin créditos, RSS caído) no necesita volcar la pila.
-  console.error(error.message);
+  // Un fallo esperable (clave de Buffer inválida, RSS caído) no necesita volcar la pila,
+  // pero sí la causa: un error de red en fetch solo dice «fetch failed».
+  const cause = error.cause?.code ?? error.cause?.message;
+  console.error(cause ? `${error.message} (${cause})` : error.message);
   process.exit(1);
 });
 
@@ -213,9 +196,9 @@ if (!state.lastPostedId) {
   const lastIndex = entries.findIndex((entry) => entry.id === state.lastPostedId);
   const pending = lastIndex === -1 ? [entries[0]] : entries.slice(0, lastIndex).reverse();
   if (pending.length) {
-    const accessToken = await oauth2AccessToken();
+    const channelId = await resolveChannelId();
     for (const entry of pending) {
-      await publish(entry, accessToken);
+      await publish(entry, channelId);
       await writeFile(STATE_FILE, `${JSON.stringify({ lastPostedId: entry.id }, null, 2)}\n`);
     }
   } else {
