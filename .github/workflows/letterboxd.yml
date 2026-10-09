@@ -10,6 +10,8 @@ on:
 
 permissions:
   contents: write
+  # Para el aviso de que el NPSSO de PlayStation está a punto de caducar.
+  issues: write
 
 concurrency:
   group: letterboxd-to-x
@@ -34,6 +36,7 @@ jobs:
           node-version: 24
 
       - name: Publish new ratings
+        id: publish
         run: node src/index.js
         env:
           LETTERBOXD_RSS_URL: https://letterboxd.com/charlie_white/rss/
@@ -59,4 +62,32 @@ jobs:
             git commit -m "Update posted entries"
             git pull --rebase origin "$GITHUB_REF_NAME"
             git push origin "HEAD:$GITHUB_REF_NAME"
+          fi
+
+      # Con 7 días o menos, abre un aviso asignado al propietario, que le llega
+      # por correo. Se cierra solo al renovar el NPSSO, para que la próxima vez
+      # vuelva a abrirse uno.
+      - name: Warn before the PlayStation token expires
+        if: ${{ !cancelled() && steps.publish.outputs.npsso_days_left != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DAYS_LEFT: ${{ steps.publish.outputs.npsso_days_left }}
+        run: |
+          title="Renovar el NPSSO de PlayStation"
+          open=$(gh issue list --state open --limit 100 --json number,title \
+            --jq "[.[] | select(.title == \"$title\")][0].number // empty")
+          if [ "$DAYS_LEFT" -le 7 ]; then
+            if [ -z "$open" ]; then
+              body=$(printf '%s\n' \
+                "Al NPSSO de PlayStation le quedan $DAYS_LEFT días. Cuando caduque, los platinos dejarán de publicarse hasta que lo renueves; los que consigas mientras tanto se publicarán después." \
+                "" \
+                "1. Inicia sesión en https://www.playstation.com." \
+                "2. En el mismo navegador abre https://ca.account.sony.com/api/v1/ssocookie y copia el valor de \`npsso\`." \
+                "3. Guárdalo en el secreto \`PSN_NPSSO\` (Settings → Secrets and variables → Actions)." \
+                "" \
+                "Este aviso se cierra solo cuando el bot detecta el NPSSO nuevo.")
+              gh issue create --title "$title" --assignee "$GITHUB_REPOSITORY_OWNER" --body "$body"
+            fi
+          elif [ -n "$open" ]; then
+            gh issue close "$open" --comment "NPSSO renovado: le quedan $DAYS_LEFT días."
           fi

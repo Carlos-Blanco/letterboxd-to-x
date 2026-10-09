@@ -35,6 +35,8 @@ Sony no ofrece una API pública, así que el bot usa la de su app móvil, igual 
 
 El NPSSO caduca a los dos meses y deja de valer antes si vuelves a iniciar sesión en la web de PlayStation, porque cada inicio de sesión genera uno nuevo. Cuando pasa, la ejecución falla con un mensaje que lo dice y hay que repetir los tres pasos; las películas y los libros se siguen publicando.
 
+Para que no pille por sorpresa, el bot consulta en cada ejecución cuántos días le quedan al NPSSO. Con 7 o menos, el workflow abre el aviso «Renovar el NPSSO de PlayStation» en las *issues* del repositorio, asignado al propietario, que lo recibe por correo. El aviso se cierra solo cuando el bot detecta el NPSSO nuevo. Los platinos conseguidos mientras estaba caducado se publican al renovarlo.
+
 - El bot guarda en `psn-posted.json` los juegos cuyo platino ya ha visto y publica los que aparecen nuevos, en cualquier plataforma (PS5, PS4...).
 - Si aparecen más de 5 platinos nuevos a la vez, se registran sin publicarlos, igual que con los libros.
 
