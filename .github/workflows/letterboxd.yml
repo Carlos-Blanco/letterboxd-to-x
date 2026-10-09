@@ -38,6 +38,8 @@ jobs:
         env:
           LETTERBOXD_RSS_URL: https://letterboxd.com/charlie_white/rss/
           GOODREADS_RSS_URL: https://www.goodreads.com/review/list_rss/68227397?shelf=read
+          # Caduca a los dos meses; sin él no se consultan los trofeos (ver README).
+          PSN_NPSSO: ${{ secrets.PSN_NPSSO }}
           BUFFER_API_KEY: ${{ secrets.BUFFER_API_KEY }}
           # Opcional: sin él se usa la única cuenta de X conectada en Buffer.
           BUFFER_CHANNEL_ID: ${{ secrets.BUFFER_CHANNEL_ID }}
@@ -48,8 +50,8 @@ jobs:
       - name: Save processed feed position
         if: ${{ !cancelled() }}
         run: |
-          # El patrón cubre last-posted.json y goodreads-posted.json, también la
-          # primera vez que se crea este último.
+          # El patrón cubre last-posted.json, goodreads-posted.json y
+          # psn-posted.json, también la primera vez que se crean.
           git add -- '*-posted.json'
           if ! git diff --cached --quiet; then
             git config user.name "github-actions[bot]"

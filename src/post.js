@@ -1,10 +1,14 @@
 // Ajuste del texto al límite de X y publicación, común a todas las fuentes.
 import { resolveChannelId, sharePost } from './buffer.js';
+import { readState, writeState } from './feed.js';
 
 // X cuenta 280 «unidades»: cada URL pesa 23 pase lo que pase y los caracteres
 // fuera de los rangos latinos básicos (emojis y estrellas incluidos) pesan 2.
 const POST_LIMIT = 280;
 const URL_PATTERN = /https?:\/\/\S+/gi;
+// Tantas entradas nuevas a la vez no son cosas recién terminadas, sino una
+// importación en bloque o un cambio en la fuente: publicarlas inundaría la cuenta.
+const MAX_NEW_ENTRIES = 5;
 
 function postLength(text) {
   const urls = text.match(URL_PATTERN) ?? [];
@@ -60,4 +64,35 @@ export async function publish({ title, text, imageUrl }) {
   }
   if (result.rejection) throw new Error(`Buffer rechazó el post de «${title}»: ${result.rejection}`);
   console.log(`Enviado a X vía Buffer${withCover ? ' con portada' : ' sin portada'} (post ${result.post.id}): ${text}`);
+}
+
+// Para fuentes cuyo orden no es de fiar: guarda en `stateFile` todos los ids ya
+// vistos y publica las entradas que no estén entre ellos.
+// - `seed()` devuelve todos los ids que existen; solo se llama la primera vez.
+// - `latest()` devuelve las entradas recientes, la más nueva primero.
+// - `toPost(entry)` devuelve lo que recibe `publish`.
+export async function publishUnseen({ name, stateFile, seed, latest, toPost }) {
+  const state = await readState(stateFile);
+  if (!state.seenIds) {
+    const seenIds = await seed();
+    await writeState(stateFile, { seenIds });
+    console.log(`${name}: punto de partida guardado con ${seenIds.length} entradas que ya existían. Las nuevas se publicarán en las siguientes ejecuciones.`);
+    return;
+  }
+
+  const seen = new Set(state.seenIds);
+  const pending = (await latest()).filter((entry) => !seen.has(entry.id)).reverse();
+  if (!pending.length) console.log(`${name}: no hay novedades.`);
+
+  if (pending.length > MAX_NEW_ENTRIES) {
+    await writeState(stateFile, { seenIds: [...state.seenIds, ...pending.map((entry) => entry.id)] });
+    throw new Error(`${pending.length} entradas nuevas a la vez: las registro sin publicarlas (el máximo por ejecución es ${MAX_NEW_ENTRIES})`);
+  }
+
+  const seenIds = [...state.seenIds];
+  for (const entry of pending) {
+    await publish(toPost(entry));
+    seenIds.push(entry.id);
+    await writeState(stateFile, { seenIds });
+  }
 }

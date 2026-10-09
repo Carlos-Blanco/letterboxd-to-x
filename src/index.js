@@ -1,8 +1,9 @@
 import { run as goodreads } from './goodreads.js';
 import { run as letterboxd } from './letterboxd.js';
+import { run as psn } from './psn.js';
 
-// Cada fuente por separado: que falle un RSS no impide publicar lo de la otra.
-for (const [name, run] of Object.entries({ Letterboxd: letterboxd, Goodreads: goodreads })) {
+// Cada fuente por separado: que falle una no impide publicar lo de las demás.
+for (const [name, run] of Object.entries({ Letterboxd: letterboxd, Goodreads: goodreads, PlayStation: psn })) {
   try {
     await run();
   } catch (error) {
