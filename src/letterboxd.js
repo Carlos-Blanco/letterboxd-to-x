@@ -82,7 +82,7 @@ async function tmdbPosterUrl(entry) {
 }
 
 function composeText(entry, review) {
-  const header = `🍿 '${entry.title}'${entry.year ? ` (${entry.year})` : ''}`;
+  const header = `🍿 He visto '${entry.title}'${entry.year ? ` (${entry.year})` : ''}`;
   const details = [entry.rating, review].filter(Boolean).join('\n');
   const cuerpo = [header, details].filter(Boolean).join('\n');
   return LETTERBOXD_PROFILE_URL ? `${cuerpo}\n\n${LETTERBOXD_PROFILE_URL}` : cuerpo;

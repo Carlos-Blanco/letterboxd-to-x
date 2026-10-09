@@ -8,7 +8,7 @@ Si la reseña no cabe en los 280 caracteres de X, se recorta por palabras. Si Bu
 
 ## Letterboxd
 
-El post lleva el título y el año: `🍿 'The Odyssey' (2026)`. Para añadir el enlace al perfil, define `LETTERBOXD_PROFILE_URL` en el workflow.
+El post lleva el título y el año: `🍿 He visto 'The Odyssey' (2026)`. Para añadir el enlace al perfil, define `LETTERBOXD_PROFILE_URL` en el workflow.
 
 Solo se publican las entradas del diario que llevan valoración: el RSS también incluye las listas del perfil (`letterboxd-list-*`) y las películas vistas sin puntuar, y esas se ignoran. El bot recuerda en `last-posted.json` la última entrada publicada y publica las que el RSS muestra por encima de ella.
 
