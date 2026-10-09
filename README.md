@@ -1,10 +1,44 @@
 # Letterboxd to X
 
-Publica en X las nuevas valoraciones del RSS de Letterboxd cada 15 minutos. El post incluye el título y año, la valoración con estrellas, el texto de la reseña si existe y la portada. Para añadir el enlace al perfil, define `LETTERBOXD_PROFILE_URL` en el workflow.
+Publica en X las nuevas valoraciones de películas (RSS de Letterboxd) y de libros (RSS de Goodreads), y los trofeos de platino de PlayStation, cada 15 minutos. El post de una valoración incluye el título, las estrellas, el texto de la reseña si existe y la portada.
 
 Publica a través de la API del plan gratuito de [Buffer](https://buffer.com), que envía cada post a la cuenta de X conectada.
 
-Solo se publican las entradas del diario que llevan valoración: el RSS también incluye las listas del perfil (`letterboxd-list-*`) y las películas vistas sin puntuar, y esas se ignoran. Si la reseña no cabe en los 280 caracteres de X, se recorta por palabras. Si Buffer rechaza la portada, el post se publica igualmente solo con texto para que la cola no se quede atascada.
+Si la reseña no cabe en los 280 caracteres de X, se recorta por palabras. Si Buffer rechaza la portada, el post se publica igualmente solo con texto para que la cola no se quede atascada. Las fuentes son independientes: si falla una, lo de las demás se publica igual.
+
+## Letterboxd
+
+El post lleva el título y el año: `🍿 He visto 'The Odyssey' (2026)`. Para añadir el enlace al perfil, define `LETTERBOXD_PROFILE_URL` en el workflow.
+
+Solo se publican las entradas del diario que llevan valoración: el RSS también incluye las listas del perfil (`letterboxd-list-*`) y las películas vistas sin puntuar, y esas se ignoran. El bot recuerda en `last-posted.json` la última entrada publicada y publica las que el RSS muestra por encima de ella.
+
+## Goodreads
+
+El post lleva el título y el autor: `📚 He leído 'Holly', de Stephen King`. Del título se quitan la saga y la edición que añade Goodreads («(Holly Gibney, #3)», «(Spanish Edition)»).
+
+Define `GOODREADS_RSS_URL` en el workflow con el RSS de tu estantería de leídos: `https://www.goodreads.com/review/list_rss/<id>?shelf=read`, donde `<id>` es el número de la dirección de tu perfil. El perfil tiene que ser público. Sin esa variable, Goodreads no se consulta.
+
+- Se publica un libro cuando recibe valoración. Los leídos sin puntuar se ignoran hasta entonces.
+- El bot guarda en `goodreads-posted.json` todas las valoraciones ya vistas, y no solo la última: el RSS se ordena por «fecha de añadido», que cambia al editar una reseña antigua y la devuelve arriba. Cambiar la nota o la reseña de un libro ya visto no lo vuelve a publicar.
+- Si aparecen más de 5 valoraciones nuevas a la vez, se registran sin publicarlas y la ejecución falla una vez para avisar: es una importación en bloque, no libros recién terminados.
+- La portada es la de Goodreads. Si el libro no tiene, el post sale solo con texto.
+
+## PlayStation
+
+Cuando consigues el platino de un juego, el bot publica `🏆 He conseguido el platino de 'ASTRO BOT'` con la imagen del juego en la lista de trofeos.
+
+Sony no ofrece una API pública, así que el bot usa la de su app móvil, igual que [psn-api](https://github.com/achievements-app/psn-api). Se identifica con el NPSSO, el token de tu sesión web:
+
+1. Inicia sesión en [playstation.com](https://www.playstation.com).
+2. En el mismo navegador abre [ca.account.sony.com/api/v1/ssocookie](https://ca.account.sony.com/api/v1/ssocookie) y copia el valor de `npsso` (64 caracteres).
+3. Guárdalo en el secreto `PSN_NPSSO`. Sin ese secreto, PlayStation no se consulta.
+
+El NPSSO caduca a los dos meses y deja de valer antes si vuelves a iniciar sesión en la web de PlayStation, porque cada inicio de sesión genera uno nuevo. Cuando pasa, la ejecución falla con un mensaje que lo dice y hay que repetir los tres pasos; las películas y los libros se siguen publicando.
+
+Para que no pille por sorpresa, el bot consulta en cada ejecución cuántos días le quedan al NPSSO. Con 7 o menos, el workflow abre el aviso «Renovar el NPSSO de PlayStation» en las *issues* del repositorio, asignado al propietario, que lo recibe por correo. El aviso se cierra solo cuando el bot detecta el NPSSO nuevo. Los platinos conseguidos mientras estaba caducado se publican al renovarlo.
+
+- El bot guarda en `psn-posted.json` los juegos cuyo platino ya ha visto y publica los que aparecen nuevos, en cualquier plataforma (PS5, PS4...).
+- Si aparecen más de 5 platinos nuevos a la vez, se registran sin publicarlos, igual que con los libros.
 
 ## Configurar Buffer
 
@@ -26,6 +60,7 @@ En `Settings → Secrets and variables → Actions` configura:
 
 - `BUFFER_API_KEY`
 - `BUFFER_CHANNEL_ID` (opcional; sin él se usa la única cuenta de X conectada en Buffer. Solo hace falta si tienes varias: `npm run check-buffer` muestra sus IDs)
+- `PSN_NPSSO` (opcional; solo para los trofeos de PlayStation)
 - `TMDB_API_READ_ACCESS_TOKEN` (opcional; si falta o TMDB no encuentra una coincidencia exacta, usa la imagen del RSS)
 
 ## Portadas
@@ -40,7 +75,7 @@ El bot solo sabe si Buffer ha aceptado el post. Si X lo rechaza después (por ej
 
 ## Puesta en marcha
 
-En `Settings → Actions → General`, permite que GitHub Actions lea y escriba en el repositorio para guardar el último elemento procesado. Activa Actions y ejecuta manualmente **Letterboxd to X** una vez: si `last-posted.json` no existe, esa primera ejecución registra la entrada actual como punto de partida sin publicarla. Las valoraciones nuevas se publicarán en ejecuciones posteriores.
+En `Settings → Actions → General`, permite que GitHub Actions lea y escriba en el repositorio para guardar el último elemento procesado. Activa Actions y ejecuta manualmente **Letterboxd to X** una vez: si `last-posted.json`, `goodreads-posted.json` o `psn-posted.json` no existen, esa primera ejecución registra como punto de partida lo que ya hay en cada fuente, sin publicarlo. Las valoraciones nuevas se publicarán en ejecuciones posteriores.
 
 El RSS configurado es `https://letterboxd.com/charlie_white/rss/`; se puede cambiar con `LETTERBOXD_RSS_URL`.
 
@@ -59,4 +94,4 @@ GitHub responde `204` cuando acepta la petición. Si coinciden dos ejecuciones, 
 
 ## Ejecución local
 
-Requiere Node.js 20 o superior. Exporta `BUFFER_API_KEY` (y `TMDB_API_READ_ACCESS_TOKEN` si quieres) y ejecuta `npm start`. Publica de verdad y actualiza `last-posted.json`.
+Requiere Node.js 20 o superior. Exporta `BUFFER_API_KEY` (y `GOODREADS_RSS_URL`, `PSN_NPSSO` y `TMDB_API_READ_ACCESS_TOKEN` si quieres) y ejecuta `npm start`. Publica de verdad y actualiza los ficheros `*-posted.json`.
