@@ -47,7 +47,7 @@ async function allRatedIds() {
 }
 
 function composeText(book, review) {
-  const header = `📚 '${book.title}'${book.author ? `, de ${book.author}` : ''}`;
+  const header = `📚 He leído '${book.title}'${book.author ? `, de ${book.author}` : ''}`;
   return [header, book.rating, review].filter(Boolean).join('\n');
 }
 

@@ -14,7 +14,7 @@ Solo se publican las entradas del diario que llevan valoración: el RSS también
 
 ## Goodreads
 
-El post lleva el título y el autor: `📚 'Holly', de Stephen King`. Del título se quitan la saga y la edición que añade Goodreads («(Holly Gibney, #3)», «(Spanish Edition)»).
+El post lleva el título y el autor: `📚 He leído 'Holly', de Stephen King`. Del título se quitan la saga y la edición que añade Goodreads («(Holly Gibney, #3)», «(Spanish Edition)»).
 
 Define `GOODREADS_RSS_URL` en el workflow con el RSS de tu estantería de leídos: `https://www.goodreads.com/review/list_rss/<id>?shelf=read`, donde `<id>` es el número de la dirección de tu perfil. El perfil tiene que ser público. Sin esa variable, Goodreads no se consulta.
 
