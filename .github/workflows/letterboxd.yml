@@ -40,7 +40,8 @@ jobs:
         run: node src/index.js
         env:
           LETTERBOXD_RSS_URL: https://letterboxd.com/charlie_white/rss/
-          GOODREADS_RSS_URL: https://www.goodreads.com/review/list_rss/68227397?shelf=read
+          # Goodreads eliminó de forma permanente sus feeds RSS (404) en octubre de 2026.
+          # GOODREADS_RSS_URL: https://www.goodreads.com/review/list_rss/68227397?shelf=read
           # Caduca a los dos meses; sin él no se consultan los trofeos (ver README).
           PSN_NPSSO: ${{ secrets.PSN_NPSSO }}
           BUFFER_API_KEY: ${{ secrets.BUFFER_API_KEY }}
