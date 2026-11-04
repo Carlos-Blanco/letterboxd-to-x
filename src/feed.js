@@ -1,7 +1,7 @@
 // Lectura de RSS y del estado guardado, común a todas las fuentes.
 import { readFile, writeFile } from 'node:fs/promises';
 
-function decode(value = '') {
+export function decode(value = '') {
   return value
     .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')
     .replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n)))

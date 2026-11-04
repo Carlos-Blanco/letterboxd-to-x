@@ -1,6 +1,6 @@
 # Letterboxd to X
 
-Publica en X las nuevas valoraciones de películas (RSS de Letterboxd) y de libros (RSS de Goodreads), y los trofeos de platino de PlayStation, cada 15 minutos. El post de una valoración incluye el título, las estrellas, el texto de la reseña si existe y la portada.
+Publica en X las nuevas valoraciones de películas (RSS de Letterboxd) y de libros ([Hardcover.app](https://hardcover.app)), y los trofeos de platino de PlayStation, cada 15 minutos. El post de una valoración incluye el título, las estrellas, el texto de la reseña si existe y la portada.
 
 Publica a través de la API del plan gratuito de [Buffer](https://buffer.com), que envía cada post a la cuenta de X conectada.
 
@@ -12,16 +12,19 @@ El post lleva el título y el año: `🍿 He visto 'The Odyssey' (2026)`. Para a
 
 Solo se publican las entradas del diario que llevan valoración: el RSS también incluye las listas del perfil (`letterboxd-list-*`) y las películas vistas sin puntuar, y esas se ignoran. El bot recuerda en `last-posted.json` la última entrada publicada y publica las que el RSS muestra por encima de ella.
 
-## Goodreads
+## Hardcover
 
-El post lleva el título y el autor: `📚 He leído 'Holly', de Stephen King`. Del título se quitan la saga y la edición que añade Goodreads («(Holly Gibney, #3)», «(Spanish Edition)»).
+El post lleva el título y el autor: `📚 He leído 'Holly', de Stephen King`.
 
-Define `GOODREADS_RSS_URL` en el workflow con el RSS de tu estantería de leídos: `https://www.goodreads.com/review/list_rss/<id>?shelf=read`, donde `<id>` es el número de la dirección de tu perfil. El perfil tiene que ser público. Sin esa variable, Goodreads no se consulta.
+Para conectar tu cuenta de Hardcover:
 
-- Se publica un libro cuando recibe valoración. Los leídos sin puntuar se ignoran hasta entonces.
-- El bot guarda en `goodreads-posted.json` todas las valoraciones ya vistas, y no solo la última: el RSS se ordena por «fecha de añadido», que cambia al editar una reseña antigua y la devuelve arriba. Cambiar la nota o la reseña de un libro ya visto no lo vuelve a publicar.
-- Si aparecen más de 5 valoraciones nuevas a la vez, se registran sin publicarlas y la ejecución falla una vez para avisar: es una importación en bloque, no libros recién terminados.
-- La portada es la de Goodreads. Si el libro no tiene, el post sale solo con texto.
+1. Ve a [hardcover.app/account/api](https://hardcover.app/account/api) y genera un API token.
+2. Guárdalo en el secreto `HARDCOVER_API_KEY` de GitHub Actions. Sin este secreto, Hardcover no se consulta.
+
+- Se publica un libro cuando lo marcas como leído (`Read`) y le asignas valoración con estrellas.
+- El bot guarda en `hardcover-posted.json` todos los libros ya leídos y valorados. La primera ejecución registra lo que ya tengas en tu cuenta sin publicarlo; los libros nuevos se publicarán a partir de entonces.
+- Si aparecen más de 5 valoraciones nuevas de golpe (por ejemplo al importar desde Goodreads), se registran sin publicarlas para evitar inundar la cuenta.
+- La portada es la de Hardcover. Si el libro no tiene, el post sale solo con texto.
 
 ## PlayStation
 
@@ -59,6 +62,7 @@ El bot crea cada post con `mode: shareNow`, así que sale al momento sin pasar p
 En `Settings → Secrets and variables → Actions` configura:
 
 - `BUFFER_API_KEY`
+- `HARDCOVER_API_KEY` (opcional; solo para los libros de Hardcover)
 - `BUFFER_CHANNEL_ID` (opcional; sin él se usa la única cuenta de X conectada en Buffer. Solo hace falta si tienes varias: `npm run check-buffer` muestra sus IDs)
 - `PSN_NPSSO` (opcional; solo para los trofeos de PlayStation)
 - `TMDB_API_READ_ACCESS_TOKEN` (opcional; si falta o TMDB no encuentra una coincidencia exacta, usa la imagen del RSS)
@@ -75,7 +79,7 @@ El bot solo sabe si Buffer ha aceptado el post. Si X lo rechaza después (por ej
 
 ## Puesta en marcha
 
-En `Settings → Actions → General`, permite que GitHub Actions lea y escriba en el repositorio para guardar el último elemento procesado. Activa Actions y ejecuta manualmente **Letterboxd to X** una vez: si `last-posted.json`, `goodreads-posted.json` o `psn-posted.json` no existen, esa primera ejecución registra como punto de partida lo que ya hay en cada fuente, sin publicarlo. Las valoraciones nuevas se publicarán en ejecuciones posteriores.
+En `Settings → Actions → General`, permite que GitHub Actions lea y escriba en el repositorio para guardar el último elemento procesado. Activa Actions y ejecuta manualmente **Letterboxd to X** una vez: si `last-posted.json`, `hardcover-posted.json` o `psn-posted.json` no existen, esa primera ejecución registra como punto de partida lo que ya hay en cada fuente, sin publicarlo. Las valoraciones nuevas se publicarán en ejecuciones posteriores.
 
 El RSS configurado es `https://letterboxd.com/charlie_white/rss/`; se puede cambiar con `LETTERBOXD_RSS_URL`.
 
@@ -94,4 +98,4 @@ GitHub responde `204` cuando acepta la petición. Si coinciden dos ejecuciones, 
 
 ## Ejecución local
 
-Requiere Node.js 20 o superior. Exporta `BUFFER_API_KEY` (y `GOODREADS_RSS_URL`, `PSN_NPSSO` y `TMDB_API_READ_ACCESS_TOKEN` si quieres) y ejecuta `npm start`. Publica de verdad y actualiza los ficheros `*-posted.json`.
+Requiere Node.js 20 o superior. Exporta `BUFFER_API_KEY` (y `HARDCOVER_API_KEY`, `PSN_NPSSO` y `TMDB_API_READ_ACCESS_TOKEN` si quieres) y ejecuta `npm start`. Publica de verdad y actualiza los ficheros `*-posted.json`.
