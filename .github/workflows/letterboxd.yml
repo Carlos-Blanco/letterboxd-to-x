@@ -54,7 +54,7 @@ jobs:
       - name: Save processed feed position
         if: ${{ !cancelled() }}
         run: |
-          # El patrón cubre last-posted.json, goodreads-posted.json y
+          # El patrón cubre last-posted.json, hardcover-posted.json y
           # psn-posted.json, también la primera vez que se crean.
           git add -- '*-posted.json'
           if ! git diff --cached --quiet; then

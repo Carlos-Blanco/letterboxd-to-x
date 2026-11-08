@@ -15,6 +15,7 @@ async function queryHardcover(query, variables = {}) {
       'User-Agent': 'letterboxd-to-x/1.0',
     },
     body: JSON.stringify({ query, variables }),
+    signal: AbortSignal.timeout(15_000),
   });
 
   if (!response.ok) {

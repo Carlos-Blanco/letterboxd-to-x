@@ -11,6 +11,10 @@ for (const [name, run] of Object.entries({ Letterboxd: letterboxd, Hardcover: ha
     // pero sí la causa: un error de red en fetch solo dice «fetch failed».
     const cause = error.cause?.code ?? error.cause?.message;
     console.error(`${name}: ${cause ? `${error.message} (${cause})` : error.message}`);
-    process.exitCode = 1;
+    // PlayStation usa un token que caduca periódicamente. Si falla, se reporta en el log pero
+    // no se marca código de salida 1 para evitar recibir correos de error cada 15 minutos.
+    if (name !== 'PlayStation') {
+      process.exitCode = 1;
+    }
   }
 }
